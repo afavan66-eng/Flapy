@@ -1,1 +1,194 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Flappy</title>
 
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: #000;
+    color: #fff;
+    font-family: Arial;
+    overflow: hidden;
+  }
+  #game {
+    background: #70c5ce;
+    display: block;
+    margin: auto;
+  }
+  #login, #admin {
+    position: fixed;
+    inset: 0;
+    background: #000;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+  button {
+    padding: 12px 20px;
+    font-size: 18px;
+    margin: 10px;
+  }
+  #scoreboard {
+    position: fixed;
+    bottom: 0;
+    width: 100%;
+    max-height: 40%;
+    overflow-y: auto;
+    background: rgba(0,0,0,.7);
+  }
+</style>
+</head>
+
+<body>
+
+<div id="login">
+  <h1>Flappy</h1>
+  <button onclick="login()">Google ile Giriş</button>
+</div>
+
+<canvas id="game" width="360" height="640"></canvas>
+
+<div id="scoreboard"></div>
+
+<div id="admin" style="display:none">
+  <h2>Admin Panel</h2>
+  <div id="adminScores"></div>
+</div>
+
+<!-- FIREBASE -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+import { getAuth, GoogleAuthProvider, signInWithPopup } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, updateDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBOK4La1lZ8uL5iFikZN8d8agYgAV-BO6k",
+  authDomain: "snake-793c9.firebaseapp.com",
+  projectId: "snake-793c9",
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth();
+const db = getFirestore();
+
+const ADMIN_MAIL = "afavan66@gmail.com";
+
+let user = null;
+
+/* ---------- LOGIN ---------- */
+window.login = async () => {
+  const provider = new GoogleAuthProvider();
+  const res = await signInWithPopup(auth, provider);
+  user = res.user;
+  document.getElementById("login").style.display = "none";
+
+  if (location.hash === "#_admin_afavan" && user.email === ADMIN_MAIL) {
+    showAdmin();
+  } else {
+    startGame();
+    loadScores();
+  }
+};
+
+/* ---------- GAME ---------- */
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+let birdY = 300, vel = 0, score = 0, dead = false;
+let pipes = [];
+
+function startGame() {
+  canvas.addEventListener("click", () => vel = -7);
+  setInterval(addPipe, 1500);
+  requestAnimationFrame(loop);
+}
+
+function addPipe() {
+  pipes.push({
+    x: canvas.width,
+    gap: Math.random() * 200 + 150,
+    passed: false
+  });
+}
+
+function loop() {
+  if (dead) return;
+
+  ctx.clearRect(0,0,360,640);
+
+  vel += 0.4;
+  birdY += vel;
+
+  ctx.fillStyle = "yellow";
+  ctx.beginPath();
+  ctx.arc(80, birdY, 15, 0, Math.PI*2);
+  ctx.fill();
+
+  pipes.forEach(p => {
+    p.x -= 2;
+    ctx.fillStyle = "green";
+    ctx.fillRect(p.x, 0, 50, p.gap - 80);
+    ctx.fillRect(p.x, p.gap + 80, 50, 640);
+
+    if (!p.passed && p.x < 80) {
+      p.passed = true;
+      score++;
+    }
+
+    if (80 > p.x && 80 < p.x+50 &&
+       (birdY < p.gap-80 || birdY > p.gap+80)) endGame();
+  });
+
+  ctx.fillStyle = "white";
+  ctx.fillText("Skor: " + score, 10, 20);
+
+  if (birdY < 0 || birdY > 640) endGame();
+
+  requestAnimationFrame(loop);
+}
+
+async function endGame() {
+  dead = true;
+  await addDoc(collection(db,"scores"),{
+    name: user.displayName,
+    score: score
+  });
+  loadScores();
+}
+
+/* ---------- SCORES ---------- */
+async function loadScores() {
+  const snap = await getDocs(collection(db,"scores"));
+  let html = "<h3>Skorlar</h3>";
+  snap.forEach(d => html += `<div>${d.data().name} - ${d.data().score}</div>`);
+  document.getElementById("scoreboard").innerHTML = html;
+}
+
+/* ---------- ADMIN ---------- */
+async function showAdmin() {
+  document.getElementById("admin").style.display = "block";
+  const snap = await getDocs(collection(db,"scores"));
+  let html = "";
+  snap.forEach(d => {
+    html += `
+      <div>
+        ${d.data().name} - ${d.data().score}
+        <button onclick="inc('${d.id}',${d.data().score})">+</button>
+        <button onclick="dec('${d.id}',${d.data().score})">-</button>
+        <button onclick="del('${d.id}')">X</button>
+      </div>`;
+  });
+  document.getElementById("adminScores").innerHTML = html;
+}
+
+window.inc = async (id,s) => updateDoc(doc(db,"scores",id),{score:s+1});
+window.dec = async (id,s) => updateDoc(doc(db,"scores",id),{score:s-1});
+window.del = async (id) => deleteDoc(doc(db,"scores",id));
+</script>
+</body>
+</html>
